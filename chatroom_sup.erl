@@ -26,3 +26,4 @@ init([]) ->
                       Restart, Shutdown, Type, [chatroom]},
 
     {ok, {SupFlags, [Chatroom]}}.
+
