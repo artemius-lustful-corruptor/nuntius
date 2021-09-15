@@ -10,104 +10,106 @@
 
 -define(SERVER, ?MODULE). % macro that defines this module as the server
 
-
-% The server state consists of a list of tuples for each person in chat.
-% Each tuple has the format {{UserName, UserServer}, PID of person}
+%% The server state consists of a list of tuples for each person in chat.
+%% Each tuple has the format {{UserName, UserServer}, PID of person}
 %%% convenience method for startup
 start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%% gen_server callbacks
 init([]) ->
-  {ok, []}.
+    {ok, [{messages, []}]}.
 
 %% Check to see if a user name/server pair is unique;
 %% if so, add it to the server's state
 handle_call({login, UserName, ServerRef}, From, State) ->
-  {FromPid, _FromTag} = From,
-  case lists:keymember({UserName, ServerRef}, 1, State) of
-    true ->
-      NewState = State,
-      Reply = {error, "User " ++ UserName ++ " already in use."};
-    false ->
-      NewState = [{{UserName, ServerRef}, FromPid} | State],
-      Reply = {ok, "Logged in."}
-  end,
-  {reply, Reply, NewState};
+    io:format("Init state ~p~n", [State]),
+    {FromPid, _FromTag} = From,
+    case lists:keymember({UserName, ServerRef}, 1, State) of
+        true ->
+            NewState = State,
+            Reply = {error, "User " ++ UserName ++ " already in use."};
+        false ->
+            NewState = [{{UserName, ServerRef}, FromPid} | State],
+            Reply = {ok, "Logged in."}
+    end,
+    {reply, Reply, NewState};
 
 
 %% Log out the person sending the message, but only
 %% if they're logged in already.
 handle_call(logout, From, State) ->
-  {FromPid, _FromTag} = From,
-  case lists:keymember(FromPid, 2, State) of
-    true ->
-      NewState = lists:keydelete(FromPid, 2, State),
-      Reply  = {ok, logged_out};
-    false ->
-      NewState = State,
-      Reply = {error, not_logged_in}
-  end,
-  {reply, Reply, NewState};
+    {FromPid, _FromTag} = From,
+    case lists:keymember(FromPid, 2, State) of
+        true ->
+            NewState = lists:keydelete(FromPid, 2, State),
+            Reply  = {ok, logged_out};
+        false ->
+            NewState = State,
+            Reply = {error, not_logged_in}
+    end,
+    {reply, Reply, NewState};
 
 %% When receiving a message from a person, use the From PID to
 %% get the user's name and server name from the chatroom server state.
 %% Send the message via a "cast" to everyone who is NOT the sender.
 handle_call({say, Text}, From, State) ->
-  {FromPid, _FromTag} = From,
-  
-  case lists:keymember(FromPid, 2, State) of
-    true ->
-    {value, {{SenderName, SenderServer}, _}} =
-      lists:keysearch(FromPid, 2, State), % refactoring this
-  
-    % For debugging: get the list of recipients.
-    RecipientList = [{RecipientName, RecipientServer} || {{RecipientName, RecipientServer}, _} <- State, {RecipientName, RecipientServer} /= {SenderName, SenderServer}], %WTF??
-    io:format("Recipient list: ~p~n", [RecipientList]),
-  
-    [gen_server:cast({person, RecipientServer},
-      {message, {SenderName, SenderServer}, Text}) ||
-      {{RecipientName, RecipientServer}, _} <- State,
-     RecipientName /= SenderName];
+    {FromPid, _FromTag} = From,
+    case lists:keymember(FromPid, 2, State) of
+        true ->
+            {value, {{SenderName, SenderServer}, _}} = lists:keysearch(FromPid, 2, State), % refactoring this
+                                                % For debugging: get the list of recipients.
+            RecipientList = [{RecipientName, RecipientServer} || {{RecipientName, RecipientServer}, _} <- State, {RecipientName, RecipientServer} /= {SenderName, SenderServer}], 
+            io:format("Recipient list: ~p~n", [RecipientList]),
+            Msg = {message, {SenderName, SenderServer}, Text},
+            [gen_server:cast({person, RecipientServer}, Msg) || {{RecipientName, RecipientServer}, _} <- State, RecipientName /= SenderName],
+            {value, {messages, MsgList}} = lists:keysearch(messages, 1, State),
+            NewState = [{messages, [{message, {SenderName, SenderServer}, Text} | MsgList]} | State];
 
-    false -> ok
-  end,
-  {reply, ok, State};
+        false -> ok,
+                 NewState = State
+    end,
+    {reply, ok, NewState};
 
 %% Get the state of another person and return it to the asker
 handle_call({who, Person, ServerRef}, _From, State) ->
-  % Find pid of the person at the serverref
-  Found = lists:keyfind({Person, ServerRef}, 1, State),
-  
-  case Found of
-    {{_FromUser, _FromServer}, Pid} ->
-      Reply = gen_server:call(Pid, get_profile);
-    _ ->
-      Reply = "Cannot find that user"
-  end,
-  {reply, Reply, State};
+                                                % Find pid of the person at the serverref
+    Found = lists:keyfind({Person, ServerRef}, 1, State),
+
+    case Found of
+        {{_FromUser, _FromServer}, Pid} ->
+            Reply = gen_server:call(Pid, get_profile);
+        _ ->
+            Reply = "Cannot find that user"
+    end,
+    {reply, Reply, State};
 
 
 %% Return a list of all users currently in the chat room
 handle_call(users, _From, State) ->
-  UserList = [{UserName, UserServer} ||
-    {{UserName, UserServer}, _} <- State],
-  {reply, UserList, State};
+    UserList = [{UserName, UserServer} ||
+                   {{UserName, UserServer}, _} <- State],
+    {reply, UserList, State};
+
+handle_call(history, _From, State) ->
+    {value, {messages, MsgsList}} = lists:keysearch(messages, 1, State),
+    RetList = lists:sublist(MsgsList, 1, 50),
+    {reply, {messages, RetList}, State};
 
 handle_call(Request, _From, State) ->
-  {ok, {error, "Unhandled Request", Request}, State}.
+    {ok, {error, "Unhandled Request", Request}, State}.
 
 handle_cast(_Request, State) ->
-  {noreply, State}.
+    {noreply, State}.
 
 handle_info(Info, State) ->
-  io:format("Received unknown message ~p~n", [Info]),
-  {noreply, State}.
+    io:format("Received unknown message ~p~n", [Info]),
+    {noreply, State}.
 
 
 terminate(_Reason, _State) ->
-  ok.
+    ok.
 
 code_change(_OldVsn, State, _Extra) ->
-  {ok, State}.
+    {ok, State}.
 

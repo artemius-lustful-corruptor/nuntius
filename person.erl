@@ -11,7 +11,7 @@
 -record(state, {chat_node, profile}).
 
 % internal functions
--export([login/1, logout/0, say/1, users/0, who/2, set_profile/2]). 
+-export([login/1, logout/0, say/1, users/0, who/2, set_profile/2, history/0]). 
 
 -define(CLIENT, ?MODULE). % macro that defines this module as the client
 
@@ -130,6 +130,11 @@ users() ->
 who(Person, ServerRef) ->
   gen_server:call({chatroom, get_chat_node()},
     {who, Person, ServerRef}).
+
+%% @doc Get history of the last 50 messages
+-spec(history() -> [tuple()]).
+history() ->
+    gen_server:call({chatroom, get_chat_node()}, history).
 
 
 %% @doc Update profile with a key/value pair.
