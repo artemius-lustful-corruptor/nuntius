@@ -18,19 +18,20 @@ start_link() ->
 
 %%% gen_server callbacks
 init([]) ->
-    {ok, [{messages, []}]}.
+    %%{messages, []}
+    {ok, []}.
 
 %% Check to see if a user name/server pair is unique;
 %% if so, add it to the server's state
-handle_call({login, UserName, ServerRef}, From, State) ->
-    io:format("Init state ~p~n", [State]),
+handle_call({login, {UserName,ChatRoom}, ServerRef}, From, State) ->
+
     {FromPid, _FromTag} = From,
-    case lists:keymember({UserName, ServerRef}, 1, State) of
+    case lists:keymember({{UserName,ChatRoom}, ServerRef}, 1, State) of
         true ->
             NewState = State,
             Reply = {error, "User " ++ UserName ++ " already in use."};
         false ->
-            NewState = [{{UserName, ServerRef}, FromPid} | State],
+            NewState = [{{{UserName, ChatRoom},  ServerRef}, FromPid} | State],
             Reply = {ok, "Logged in."}
     end,
     {reply, Reply, NewState};
@@ -38,11 +39,12 @@ handle_call({login, UserName, ServerRef}, From, State) ->
 
 %% Log out the person sending the message, but only
 %% if they're logged in already.
-handle_call(logout, From, State) ->
-    {FromPid, _FromTag} = From,
+handle_call({logout, Lobby}, From, State) ->
+    {FromPid, _FromServer} = From,
     case lists:keymember(FromPid, 2, State) of
         true ->
-            NewState = lists:keydelete(FromPid, 2, State),
+            {value, {{{UserName, _}, SenderServer}, _}} = lists:keysearch(FromPid, 2, State),
+            NewState = lists:keydelete({{UserName, Lobby}, SenderServer}, 1, State),
             Reply  = {ok, logged_out};
         false ->
             NewState = State,
@@ -50,24 +52,35 @@ handle_call(logout, From, State) ->
     end,
     {reply, Reply, NewState};
 
+%% FIXME copied code
+handle_call(exit, From, State) ->
+    {FromPid, _FromTag} = From,
+    {ok, NewState} = delete(State, FromPid),
+    Reply = {ok, exited},
+    io:format("~p ~n", [NewState]),
+    {reply, Reply, NewState};    
+
 %% When receiving a message from a person, use the From PID to
 %% get the user's name and server name from the chatroom server state.
 %% Send the message via a "cast" to everyone who is NOT the sender.
-handle_call({say, Text}, From, State) ->
+handle_call({say, SenderLobby,  Text}, From, State) ->
     {FromPid, _FromTag} = From,
     case lists:keymember(FromPid, 2, State) of
         true ->
-            {value, {{SenderName, SenderServer}, _}} = lists:keysearch(FromPid, 2, State), % refactoring this
-                                                % For debugging: get the list of recipients.
-            RecipientList = [{RecipientName, RecipientServer} || {{RecipientName, RecipientServer}, _} <- State, {RecipientName, RecipientServer} /= {SenderName, SenderServer}], 
-            io:format("Recipient list: ~p~n", [RecipientList]),
+            {SenderName, SenderServer}  = find_sender(SenderLobby, FromPid, State),
+            % For debugging: get the list of recipients.
+            %RecipientList = [{{RecipientName, RecipientLobby},  RecipientServer} || 
+            %{{{RecipientName, RecipientLobby}, RecipientServer}, _} <- State, 
+            %{{RecipientName, RecipientLobby}, RecipientServer} /= {{SenderName, SenderLobby}, SenderServer}], 
+            %io:format("Recipient list: ~p~n", [RecipientList]),
             Msg = {message, {SenderName, SenderServer}, Text},
-            [gen_server:cast({person, RecipientServer}, Msg) || {{RecipientName, RecipientServer}, _} <- State, RecipientName /= SenderName],
-            {value, {messages, MsgList}} = lists:keysearch(messages, 1, State),
-            NewState = [{messages, [{message, {SenderName, SenderServer}, Text} | MsgList]} | State];
-
+            [gen_server:cast({person, RecipientServer}, Msg) || {{{RecipientName, RecipientLobby}, RecipientServer}, _} <- State, 
+            (RecipientName /= SenderName) and (RecipientLobby == SenderLobby)],
+            %{value, {messages, MsgList}} = lists:keysearch(messages, 1, State),
+            %NewState = [{messages, [{SenderLobby, {SenderName, SenderServer}, Text} | MsgList]} | State];
+            NewState = State;
         false -> ok,
-                 NewState = State
+            NewState = State
     end,
     {reply, ok, NewState};
 
@@ -86,13 +99,20 @@ handle_call({who, Person, ServerRef}, _From, State) ->
 
 
 %% Return a list of all users currently in the chat room
-handle_call(users, _From, State) ->
-    UserList = [{UserName, UserServer} ||
-                   {{UserName, UserServer}, _} <- State],
+handle_call({users, ChatRoom}, _From, State) ->
+    UserList = [{{UserName, Lobby}, UserServer} ||
+                   {{{UserName, Lobby}, UserServer}, _} <- State, Lobby == ChatRoom], 
     {reply, UserList, State};
 
-handle_call(history, _From, State) ->
-    {value, {messages, MsgsList}} = lists:keysearch(messages, 1, State),
+%% Return a list of all users
+handle_call(users, _From, State) ->
+    UserList = [{UserName, UserServer} ||
+                   {{{UserName, _Lobby}, UserServer}, _} <- State], 
+    {reply, UserList, State};
+
+handle_call({history, Lobby}, _From, State) ->
+    {value, {messages, MsgsTuple}} = lists:keysearch(messages, 1, State),
+    {value, MsgsList} = lists:keysearch(Lobby, 1, MsgsTuple),
     RetList = lists:sublist(MsgsList, 1, 50),
     {reply, {messages, RetList}, State};
 
@@ -112,4 +132,26 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% HELPERS
+delete(State, FromPid) ->
+    case lists:keymember(FromPid, 2, State) of
+        true ->
+            NewState = lists:keydelete(FromPid, 2, State),
+            delete(NewState, FromPid);
+
+        false ->
+            {ok, State}
+    end.
+
+find_sender(Lobby, FromPid, State) ->
+    io:format("~p~n", [State]),
+    case lists:filter(fun({{{_,L}, _}, Pid}) -> (L == Lobby) and (Pid == FromPid) end, State) of
+        [{{{SenderName, _Lobby}, SenderServer}, _}] -> 
+            {SenderName, SenderServer};
+        [] -> 
+            {value, {{{SenderName, _}, SenderServer}, _}} = lists:keysearch(FromPid, 2, State),
+            {SenderName, SenderServer}
+    end.
+
 
