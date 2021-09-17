@@ -75,11 +75,11 @@ handle_call({say, SenderLobby,  Text}, From, State) ->
         true ->
             {SenderName, SenderServer}  = find_sender(SenderLobby, FromPid, UsersTuple),
             % For debugging: get the list of recipients.
-            RecipientList = [{{RecipientName, RecipientLobby},  RecipientServer} || 
-            {{{RecipientName, RecipientLobby}, RecipientServer}, _} <- UsersTuple, 
-            {{RecipientName, RecipientLobby}, RecipientServer} /= {{SenderName, SenderLobby}, SenderServer}], 
-            io:format("Recipient list: ~p~n", [RecipientList]),
-            Msg = {message, {SenderName, SenderServer}, Text},
+            %RecipientList = [{{RecipientName, RecipientLobby},  RecipientServer} || 
+            %{{{RecipientName, RecipientLobby}, RecipientServer}, _} <- UsersTuple, 
+            %{{RecipientName, RecipientLobby}, RecipientServer} /= {{SenderName, SenderLobby}, SenderServer}], 
+            %io:format("Recipient list: ~p~n", [RecipientList]),
+            Msg = {message, {SenderName, SenderLobby}, Text},
             [gen_server:cast({person, RecipientServer}, Msg) || {{{RecipientName, RecipientLobby}, RecipientServer}, _} <- UsersTuple, 
             (RecipientName /= SenderName) and (RecipientLobby == SenderLobby)],
             {value, {messages, MsgsTuple}} = lists:keysearch(messages, 1, State),
@@ -132,6 +132,13 @@ handle_call({history, Lobby}, _From, State) ->
         _ -> RetList = []
     end,
     {reply, {messages, RetList}, State};
+
+handle_call(lobbies, _From, State) ->
+    case  file:consult("lobbies.txt") of
+        {ok, Terms} -> Res =  Terms; 
+         _ -> Res = []
+    end,
+    {reply, Res, State};
 
 handle_call(Request, _From, State) ->
     {ok, {error, "Unhandled Request", Request}, State}.
