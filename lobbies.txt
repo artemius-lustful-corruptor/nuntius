@@ -1,6 +1,0 @@
-{chatroom, "cats"}.
-{chatroom, "dogs"}.
-{chatroom, "birds"}.
-{chatroom, "aliens"}.
-{chatroom, "funniest"}.
-{chatroom, "cars"}.
