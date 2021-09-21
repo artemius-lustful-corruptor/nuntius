@@ -29,7 +29,9 @@ init([]) ->
     SupFlags = #{strategy => one_for_all,
                  intensity => 0,
                  period => 1},
-    ChildSpecs = [],
+    Chat_room = {chat_room, {chat_room, start_link, []},
+              permanent, 2000, worker, [chat_room]},
+    ChildSpecs = [Chat_room],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions

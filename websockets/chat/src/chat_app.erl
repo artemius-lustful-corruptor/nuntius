@@ -14,7 +14,7 @@
 start(_Type, _Args) ->
 	Dispatch = cowboy_router:compile([
 		{'_', [
-			{"/websocket", chat_handler, []}
+			{"/websocket", ws_handler, []}
 		]}
 	]),
 	{ok, _} = cowboy:start_clear(http, [{port, 8080}], #{

@@ -5,6 +5,6 @@
               {mod,{chat_app,[]}},
               {applications,[kernel,stdlib,cowboy]},
               {env,[]},
-              {modules,[chat_app,chat_handler,chat_sup]},
+              {modules,[chat_app,chat_room,chat_sup,ws_handler]},
               {licenses,["Apache 2.0"]},
               {links,[]}]}.
