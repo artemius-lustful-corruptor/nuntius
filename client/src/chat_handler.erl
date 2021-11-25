@@ -17,7 +17,10 @@
          users/1, 
          users/0, 
          lobbies/0,  
-         history/1]). 
+         history/1]).
+
+
+-export([login/3]). % testing mock functions
 
 
 -define(CLIENT, ?MODULE). % macro that defines this module as the client
@@ -39,7 +42,8 @@ login(UserName, ChatRoom) ->
             {error, "User name must be an atom or a list"}
     end.
 
-
+login(UserName, ChatRoom, test) ->
+    {ok, "Logged in", ChatRoom}.
 %% @doc Log out of the system. The person server will send a From that tells
 %% who is logging out; the chatroom server doesn't need to reply.
 -spec(logout(string()) -> atom()).

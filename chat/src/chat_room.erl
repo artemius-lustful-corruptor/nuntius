@@ -18,24 +18,16 @@ start_link() ->
 
 %%% gen_server callbacks
 init([]) ->
-    
     io:format("Chat server started. ~n"),
     {ok, [{users, []},{messages, []}]}.
 
 %% Check to see if a user name/server pair is unique;
 %% if so, add it to the server's state
 handle_call({login, {UserName,ChatRoom}, ServerRef}, From, State) ->
-
     {FromPid, _FromTag} = From,
     {value, {users, UsersTuple}} = lists:keysearch(users, 1, State),
-    case lists:keymember({{UserName,ChatRoom}, ServerRef}, 1, UsersTuple) of
-        true ->
-            NewUsers = UsersTuple,
-            Reply = {error, "User " ++ UserName ++ " already in use."};
-        false ->
-            NewUsers = [{{{UserName, ChatRoom},  ServerRef}, FromPid} | UsersTuple],
-            Reply = {ok, "Logged in", ChatRoom}
-    end,
+    Params = {UsersTuple, ServerRef, FromPid},
+    {res, Reply, NewUsers} = login(UserName, ChatRoom, Params),
     NewState = lists:keyreplace(users, 1, State, {users, NewUsers}),
     {reply, Reply, NewState};
 
@@ -143,6 +135,20 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% HELPERS
+
+login(UserName, ChatRoom, Params) ->
+    {UsersTuple, ServerRef, FromPid} = Params,
+    case lists:keymember({{UserName,ChatRoom}, ServerRef}, 1, UsersTuple) of
+        true ->
+            NewUsers = UsersTuple,
+            Reply = {error, "User " ++ UserName ++ " already in use."};
+        false ->
+            NewUsers = [{{{UserName, ChatRoom},  ServerRef}, FromPid} | UsersTuple],
+            Reply = {ok, "Logged in", ChatRoom}
+    end,
+    {res, Reply, NewUsers}.
+
+
 delete(State, FromPid) ->
     case lists:keymember(FromPid, 2, State) of
         true ->
